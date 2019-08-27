@@ -16,7 +16,6 @@ HOMEPAGE="https://www.mesa3d.org/ https://mesa.freedesktop.org/"
 
 if [[ ${PV} == 9999 ]]; then
 	EGIT_REPO_URI="https://gitlab.freedesktop.org/mesa/mesa.git"
-	EXPERIMENTAL="true"
 	inherit git-r3
 else
 	SRC_URI="https://mesa.freedesktop.org/archive/${MY_P}.tar.xz"
@@ -30,15 +29,15 @@ RESTRICT="
 "
 
 RADEON_CARDS="r100 r200 r300 r600 radeon radeonsi"
-VIDEO_CARDS="${RADEON_CARDS} freedreno i915 i965 intel iris nouveau vc4 virgl vivante vmware"
+VIDEO_CARDS="${RADEON_CARDS} freedreno i915 i965 intel iris lima nouveau panfrost vc4 virgl vivante vmware"
 for card in ${VIDEO_CARDS}; do
 	IUSE_VIDEO_CARDS+=" video_cards_${card}"
 done
 
 IUSE="${IUSE_VIDEO_CARDS}
 	+classic d3d9 debug +dri3 +egl +gallium +gbm gles1 +gles2 +libglvnd +llvm
-	lm_sensors opencl osmesa pax_kernel pic selinux test unwind vaapi valgrind
-	vdpau vulkan vulkan-overlay wayland xa xvmc"
+	lm_sensors opencl osmesa pax_kernel selinux test unwind vaapi valgrind
+	vdpau vulkan vulkan-overlay wayland +X xa xvmc"
 
 REQUIRED_USE="
 	d3d9?   ( dri3 || ( video_cards_iris video_cards_r300 video_cards_r600 video_cards_radeonsi video_cards_nouveau video_cards_vmware ) )
@@ -54,7 +53,9 @@ REQUIRED_USE="
 	video_cards_i915?   ( || ( classic gallium ) )
 	video_cards_i965?   ( classic )
 	video_cards_iris?   ( gallium )
+	video_cards_lima?   ( gallium )
 	video_cards_nouveau? ( || ( classic gallium ) )
+	video_cards_panfrost? ( gallium )
 	video_cards_radeon? ( || ( classic gallium )
 						  gallium? ( x86? ( llvm ) amd64? ( llvm ) ) )
 	video_cards_r100?   ( classic )
@@ -66,20 +67,15 @@ REQUIRED_USE="
 	video_cards_virgl? ( gallium )
 	video_cards_vivante? ( gallium gbm )
 	video_cards_vmware? ( gallium )
+	xa? ( X )
+	xvmc? ( X )
 "
 
-LIBDRM_DEPSTRING=">=x11-libs/libdrm-2.4.97"
+LIBDRM_DEPSTRING=">=x11-libs/libdrm-2.4.99"
 RDEPEND="
 	!app-eselect/eselect-mesa
 	>=dev-libs/expat-2.1.0-r3:=[${MULTILIB_USEDEP}]
 	>=sys-libs/zlib-1.2.8[${MULTILIB_USEDEP}]
-	>=x11-libs/libX11-1.6.2:=[${MULTILIB_USEDEP}]
-	>=x11-libs/libxshmfence-1.1:=[${MULTILIB_USEDEP}]
-	>=x11-libs/libXdamage-1.1.4-r1:=[${MULTILIB_USEDEP}]
-	>=x11-libs/libXext-1.3.2:=[${MULTILIB_USEDEP}]
-	>=x11-libs/libXxf86vm-1.1.3:=[${MULTILIB_USEDEP}]
-	>=x11-libs/libxcb-1.13:=[${MULTILIB_USEDEP}]
-	x11-libs/libXfixes:=[${MULTILIB_USEDEP}]
 	libglvnd? (
 		media-libs/libglvnd[${MULTILIB_USEDEP}]
 		!app-eselect/eselect-opengl
@@ -124,6 +120,15 @@ RDEPEND="
 	)
 	video_cards_i915? ( ${LIBDRM_DEPSTRING}[video_cards_intel] )
 	vulkan-overlay? ( dev-util/glslang:0=[${MULTILIB_USEDEP}] )
+	X? (
+		>=x11-libs/libX11-1.6.2:=[${MULTILIB_USEDEP}]
+		>=x11-libs/libxshmfence-1.1:=[${MULTILIB_USEDEP}]
+		>=x11-libs/libXdamage-1.1.4-r1:=[${MULTILIB_USEDEP}]
+		>=x11-libs/libXext-1.3.2:=[${MULTILIB_USEDEP}]
+		>=x11-libs/libXxf86vm-1.1.3:=[${MULTILIB_USEDEP}]
+		>=x11-libs/libxcb-1.13:=[${MULTILIB_USEDEP}]
+		x11-libs/libXfixes:=[${MULTILIB_USEDEP}]
+	)
 "
 for card in ${RADEON_CARDS}; do
 	RDEPEND="${RDEPEND}
@@ -142,9 +147,10 @@ RDEPEND="${RDEPEND}
 # 1. List all the working slots (with min versions) in ||, newest first.
 # 2. Update the := to specify *max* version, e.g. < 10.
 # 3. Specify LLVM_MAX_SLOT, e.g. 9.
-LLVM_MAX_SLOT="9"
+LLVM_MAX_SLOT="10"
 LLVM_DEPSTR="
 	|| (
+		sys-devel/llvm:10[${MULTILIB_USEDEP}]
 		sys-devel/llvm:9[${MULTILIB_USEDEP}]
 		sys-devel/llvm:8[${MULTILIB_USEDEP}]
 		sys-devel/llvm:7[${MULTILIB_USEDEP}]
@@ -210,8 +216,10 @@ unset {LLVM,CLANG}_DEPSTR{,_AMDGPU}
 
 DEPEND="${RDEPEND}
 	valgrind? ( dev-util/valgrind )
-	x11-libs/libXrandr[${MULTILIB_USEDEP}]
-	x11-base/xorg-proto
+	X? (
+		x11-libs/libXrandr[${MULTILIB_USEDEP}]
+		x11-base/xorg-proto
+	)
 "
 BDEPEND="
 	${PYTHON_DEPS}
@@ -230,13 +238,11 @@ EGIT_CHECKOUT_DIR=${S}
 
 QA_WX_LOAD="
 x86? (
-	!pic? (
-		usr/lib*/libglapi.so.0.0.0
-		usr/lib*/libGLESv1_CM.so.1.0.0
-		usr/lib*/libGLESv2.so.2.0.0
-		usr/lib*/libGL.so.1.2.0
-		usr/lib*/libOSMesa.so.8.0.0
-	)
+	usr/lib*/libglapi.so.0.0.0
+	usr/lib*/libGLESv1_CM.so.1.0.0
+	usr/lib*/libGLESv2.so.2.0.0
+	usr/lib*/libGL.so.1.2.0
+	usr/lib*/libOSMesa.so.8.0.0
 )"
 
 llvm_check_deps() {
@@ -349,7 +355,7 @@ multilib_src_configure() {
 		fi
 	fi
 
-	emesonargs+=( -Dplatforms=x11,surfaceless$(use wayland && echo ",wayland")$(use gbm && echo ",drm") )
+	emesonargs+=( -Dplatforms=surfaceless$(use X && echo ",x11")$(use wayland && echo ",wayland")$(use gbm && echo ",drm") )
 
 	if use gallium; then
 		emesonargs+=(
@@ -403,13 +409,16 @@ multilib_src_configure() {
 		fi
 
 		if use video_cards_freedreno ||
+		   use video_cards_lima ||
+		   use video_cards_panfrost ||
 		   use video_cards_vc4 ||
 		   use video_cards_vivante; then
 			gallium_enable -- kmsro
 		fi
 
+		gallium_enable video_cards_lima lima
+		gallium_enable video_cards_panfrost panfrost
 		gallium_enable video_cards_vc4 vc4
-		# enable for Pi4 also
 		use arm64 && gallium_enable video_cards_vc4 v3d
 		gallium_enable video_cards_vivante etnaviv
 		gallium_enable video_cards_vmware svga
@@ -454,11 +463,6 @@ multilib_src_configure() {
 		emesonargs+=( $(meson_use pax_kernel glx-read-only-text) )
 	fi
 
-	# on abi_x86_32 hardened we need to have asm disable
-	if [[ ${ABI} == x86* ]] && use pic; then
-		emesonargs+=( -Dasm=false )
-	fi
-
 	if use gallium; then
 		gallium_enable -- swrast
 		emesonargs+=( -Dosmesa=$(usex osmesa gallium none) )
@@ -474,7 +478,7 @@ multilib_src_configure() {
 
 	emesonargs+=(
 		$(meson_use test build-tests)
-		-Dglx=dri
+		-Dglx=$(usex X dri disabled)
 		-Dshared-glapi=true
 		$(meson_use dri3)
 		$(meson_use egl)
@@ -500,8 +504,6 @@ multilib_src_compile() {
 
 multilib_src_install() {
 	meson_src_install
-
-	use libglvnd && rm -f "${D}"/usr/$(get_libdir)/libGLESv{1_CM,2}.so*
 }
 
 multilib_src_install_all() {
